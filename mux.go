@@ -10,6 +10,10 @@ import (
 	"github.com/gorilla/handlers"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/restic/rest-server/quota"
+
+	"gopkg.in/jcmturner/goidentity.v3"
+	"gopkg.in/jcmturner/gokrb5.v7/keytab"
+	"gopkg.in/jcmturner/gokrb5.v7/spnego"
 )
 
 func (s *Server) debugHandler(next http.Handler) http.Handler {
@@ -30,15 +34,31 @@ func (s *Server) logHandler(next http.Handler) http.Handler {
 }
 
 func (s *Server) checkAuth(r *http.Request) (username string, ok bool) {
-	if s.NoAuth {
-		return username, true
+	username = ""
+	ok = false
+
+	if len(s.KeyTabFile) > 0 { // SPNEGO auth provider
+		ctx := r.Context()
+		creds := ctx.Value(spnego.CTXKeyCredentials).(goidentity.Identity)
+		if creds.Authenticated() {
+			username = creds.UserName() + "@" + creds.Domain()
+			ok = true
+		}
+	} else if !s.NoBasicAuth { // HTTP basic auth provider
+		var basic_username string
+		var basic_password string
+		var basic_ok bool
+		basic_username, basic_password, basic_ok = r.BasicAuth()
+		if basic_ok && s.htpasswdFile.Validate(basic_username, basic_password) {
+			username = basic_username
+			ok = basic_ok
+		}
+	} else {
+		username = ""
+		ok = true
 	}
-	var password string
-	username, password, ok = r.BasicAuth()
-	if !ok || !s.htpasswdFile.Validate(username, password) {
-		return "", false
-	}
-	return username, true
+
+	return username, ok
 }
 
 func (s *Server) wrapMetricsAuth(f http.HandlerFunc) http.HandlerFunc {
@@ -58,7 +78,7 @@ func (s *Server) wrapMetricsAuth(f http.HandlerFunc) http.HandlerFunc {
 
 // NewHandler returns the master HTTP multiplexer/router.
 func NewHandler(server *Server) (http.Handler, error) {
-	if !server.NoAuth {
+	if !server.NoBasicAuth {
 		var err error
 		server.htpasswdFile, err = NewHtpasswdFromFile(filepath.Join(server.Path, ".htpasswd"))
 		if err != nil {
@@ -86,7 +106,18 @@ func NewHandler(server *Server) (http.Handler, error) {
 			mux.HandleFunc("/metrics", server.wrapMetricsAuth(promhttp.Handler().ServeHTTP))
 		}
 	}
-	mux.Handle("/", server)
+
+	if len(server.KeyTabFile) > 0 {
+		// Try to load the service keytab
+		kt, err := keytab.Load(server.KeyTabFile)
+		if err != nil {
+			return nil, fmt.Errorf("cannot load given keytab file: %v", err)
+		}
+
+		mux.Handle("/", spnego.SPNEGOKRB5Authenticate(server, kt))
+	} else {
+		mux.Handle("/", server)
+	}
 
 	var handler http.Handler = mux
 	if server.Debug {

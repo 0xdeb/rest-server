@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -88,16 +89,16 @@ func TestGetHandler(t *testing.T) {
 
 	getHandler := restserver.NewHandler
 
-	// With NoAuth = false and no .htpasswd
+	// With NoBasicAuth = false and no .htpasswd
 	_, err = getHandler(&restserver.Server{Path: dir})
 	if err == nil {
-		t.Errorf("NoAuth=false: expected error, got nil")
+		t.Errorf("NoBasicAuth=false: expected error, got nil")
 	}
 
-	// With NoAuth = true and no .htpasswd
-	_, err = getHandler(&restserver.Server{NoAuth: true, Path: dir})
+	// With NoBasicAuth = true and no .htpasswd
+	_, err = getHandler(&restserver.Server{NoBasicAuth: true, Path: dir})
 	if err != nil {
-		t.Errorf("NoAuth=true: expected no error, got %v", err)
+		t.Errorf("NoBasicAuth=true: expected no error, got %v", err)
 	}
 
 	// Create .htpasswd
@@ -113,9 +114,50 @@ func TestGetHandler(t *testing.T) {
 		}
 	}()
 
-	// With NoAuth = false and with .htpasswd
+	// With NoBasicAuth = false and with .htpasswd
 	_, err = getHandler(&restserver.Server{Path: dir})
 	if err != nil {
-		t.Errorf("NoAuth=false with .htpasswd: expected no error, got %v", err)
+		t.Errorf("NoBasicAuth=false with .htpasswd: expected no error, got %v", err)
 	}
+
+	// With NoBasicAuth = false and KeyTabFile given
+	_, err = getHandler(&restserver.Server{Path: dir, KeyTabFile: "http-service.keytab"})
+	if err == nil {
+		t.Errorf("NoBasicAuth=false and KeyTabFile given: expected error, got nil")
+	}
+
+	// With NoBasicAuth = true and KeyTabFile given, but file not found
+	_, err = getHandler(&restserver.Server{Path: dir, KeyTabFile: "http-service.keytab"})
+	if err == nil {
+		t.Errorf("NoBasicAuth=false and KeyTabFile given but file not found: expected error, got nil")
+	}
+
+	// Create http-service.keytab
+	keytabfilepath := filepath.Join(dir, "http-service.keytab")
+	keytabstring := "05020000005e0002000f4950412e4558414d504c452e434f4d00044854545000166d79686f73742e69706" +
+		"12e6578616d706c652e636f6d0000000161ead8980a0005001c6131623263336434653566366162636465" +
+		"66303132333435363738390000000a"
+	keytabhex, _ := hex.DecodeString(keytabstring)
+
+	err = ioutil.WriteFile(
+		keytabfilepath,
+		keytabhex,
+		0644,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		err := os.Remove(keytabfilepath)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	// With NoBasicAuth = true and KeyTabFile given
+	_, err = getHandler(&restserver.Server{Path: dir, KeyTabFile: keytabfilepath})
+	if err != nil {
+		t.Errorf("NoBasicAuth=false and KeyTabFile given: expected no error, got %v", err)
+	}
+
 }

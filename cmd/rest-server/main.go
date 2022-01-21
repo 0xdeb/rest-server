@@ -46,7 +46,8 @@ func init() {
 	flags.BoolVar(&server.TLS, "tls", server.TLS, "turn on TLS support")
 	flags.StringVar(&server.TLSCert, "tls-cert", server.TLSCert, "TLS certificate path")
 	flags.StringVar(&server.TLSKey, "tls-key", server.TLSKey, "TLS key path")
-	flags.BoolVar(&server.NoAuth, "no-auth", server.NoAuth, "disable .htpasswd authentication")
+	flags.StringVar(&server.KeyTabFile, "kerberos-keytab", server.KeyTabFile, "Kerberos service KeyTab file for SPNEGO authentication")
+	flags.BoolVar(&server.NoBasicAuth, "no-auth", server.NoBasicAuth, "disable .htpasswd authentication")
 	flags.BoolVar(&server.NoVerifyUpload, "no-verify-upload", server.NoVerifyUpload,
 		"do not verify the integrity of uploaded data. DO NOT enable unless the rest-server runs on a very low-power device")
 	flags.BoolVar(&server.AppendOnly, "append-only", server.AppendOnly, "enable append only mode")
@@ -108,10 +109,20 @@ func runRoot(cmd *cobra.Command, args []string) error {
 		signal.Notify(sigintCh, syscall.SIGINT)
 	}
 
-	if server.NoAuth {
-		log.Println("Authentication disabled")
+	if server.NoBasicAuth {
+		log.Println("HTTP Basic Authentication disabled")
 	} else {
-		log.Println("Authentication enabled")
+		log.Println("HTTP Basic Authentication enabled")
+	}
+
+	if len(server.KeyTabFile) > 0 {
+		if !server.NoBasicAuth {
+			return fmt.Errorf("HTTP Basic authentication cannot be used in combination" +
+				" with SPNEGO. Please add --no-auth to disable basic auth. ")
+		}
+		log.Println("SPNEGO authentication enabled")
+	} else {
+		log.Println("SPNEGO authentication disabled")
 	}
 
 	handler, err := restserver.NewHandler(&server)

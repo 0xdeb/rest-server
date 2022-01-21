@@ -18,10 +18,11 @@ type Server struct {
 	Listen           string
 	Log              string
 	CPUProfile       string
+	KeyTabFile       string
 	TLSKey           string
 	TLSCert          string
 	TLS              bool
-	NoAuth           bool
+	NoBasicAuth      bool
 	AppendOnly       bool
 	PrivateRepos     bool
 	Prometheus       bool
@@ -50,7 +51,7 @@ func httpDefaultError(w http.ResponseWriter, code int) {
 // authentication, etc) and then passes it on to repo.Handler for actual
 // REST API processing.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// First of all, check auth (will always pass if NoAuth is set)
+	// First of all, check auth (will always pass if NoBasicAuth is set and SPNEGO not enabled)
 	username, ok := s.checkAuth(r)
 	if !ok {
 		httpDefaultError(w, http.StatusUnauthorized)
@@ -67,7 +68,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if the current user is allowed to access this path
-	if !s.NoAuth && s.PrivateRepos {
+	if (!s.NoBasicAuth || len(s.KeyTabFile) > 0) && s.PrivateRepos {
 		if len(folderPath) == 0 || folderPath[0] != username {
 			httpDefaultError(w, http.StatusUnauthorized)
 			return

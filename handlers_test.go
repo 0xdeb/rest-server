@@ -244,7 +244,7 @@ func TestResticHandler(t *testing.T) {
 	mux, err := NewHandler(&Server{
 		AppendOnly:   true,
 		Path:         tempdir,
-		NoAuth:       true,
+		NoBasicAuth:  true,
 		Debug:        true,
 		PanicOnError: true,
 	})
@@ -377,7 +377,7 @@ func TestAbortedRequest(t *testing.T) {
 	mux, err := NewHandler(&Server{
 		AppendOnly:   false,
 		Path:         tempdir,
-		NoAuth:       true,
+		NoBasicAuth:  true,
 		Debug:        true,
 		PanicOnError: true,
 	})
